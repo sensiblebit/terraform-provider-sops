@@ -1,8 +1,10 @@
 package sops
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -14,11 +16,21 @@ import (
 	"github.com/getsops/sops/v3/keyservice"
 )
 
+// isFileNotFound returns true if the error indicates the file does not exist.
+func isFileNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist)
+}
+
 // loadAndDecryptFile loads a SOPS-encrypted file and decrypts it.
 // Returns the tree, data key, cipher (with populated IV stash), and store.
 // The same cipher instance must be used for re-encryption to preserve
 // unchanged ciphertext via the IV stash mechanism.
 func loadAndDecryptFile(filePath string) (*sopssdk.Tree, []byte, sopssdk.Cipher, common.Store, error) {
+	// Check file exists before calling SOPS (clearer error message)
+	if _, err := os.Stat(filePath); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("file not found: %w", err)
+	}
+
 	format := formats.FormatForPath(filePath)
 	store := common.StoreForFormat(format, config.NewStoresConfig())
 	cipher := aes.NewCipher()
@@ -34,6 +46,10 @@ func loadAndDecryptFile(filePath string) (*sopssdk.Tree, []byte, sopssdk.Cipher,
 		return nil, nil, nil, nil, fmt.Errorf("loading encrypted file: %w", err)
 	}
 
+	if len(tree.Branches) == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("encrypted file has no data branches")
+	}
+
 	dataKey, err := common.DecryptTree(common.DecryptTreeOpts{
 		Cipher:      cipher,
 		IgnoreMac:   false,
@@ -47,9 +63,27 @@ func loadAndDecryptFile(filePath string) (*sopssdk.Tree, []byte, sopssdk.Cipher,
 	return tree, dataKey, cipher, store, nil
 }
 
+// validateKeyPath checks that a key path is well-formed for use with parsePath.
+// Returns an error if the key is empty or contains empty segments.
+func validateKeyPath(key string) error {
+	if key == "" {
+		return fmt.Errorf("key path must not be empty")
+	}
+	parts := strings.Split(key, ".")
+	for _, part := range parts {
+		if part == "" {
+			return fmt.Errorf("key path %q contains empty segments", key)
+		}
+	}
+	return nil
+}
+
 // parsePath converts a dot-separated key string into a SOPS tree path.
 // Integer segments are converted to int for array indexing (e.g., "list.0.name"
 // becomes []interface{}{"list", 0, "name"}).
+//
+// Limitation: YAML keys that are purely numeric strings (e.g., "8080") will be
+// interpreted as array indices. Use the SOPS CLI directly for such keys.
 func parsePath(key string) []interface{} {
 	parts := strings.Split(key, ".")
 	path := make([]interface{}, len(parts))
@@ -92,7 +126,8 @@ func unsetEntries(tree *sopssdk.Tree, keys []string) {
 	}
 }
 
-// encryptAndWriteFile re-encrypts the tree and writes it to disk.
+// encryptAndWriteFile re-encrypts the tree and writes it to disk atomically.
+// The original file's permissions are preserved.
 func encryptAndWriteFile(tree *sopssdk.Tree, dataKey []byte, cipher sopssdk.Cipher, store common.Store, filePath string) error {
 	err := common.EncryptTree(common.EncryptTreeOpts{
 		DataKey: dataKey,
@@ -108,8 +143,38 @@ func encryptAndWriteFile(tree *sopssdk.Tree, dataKey []byte, cipher sopssdk.Ciph
 		return fmt.Errorf("serializing encrypted file: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, encryptedFile, 0644); err != nil {
-		return fmt.Errorf("writing encrypted file: %w", err)
+	// Preserve original file permissions
+	fileMode := os.FileMode(0600)
+	if info, err := os.Stat(filePath); err == nil {
+		fileMode = info.Mode()
+	}
+
+	// Atomic write: write to temp file in same directory, then rename
+	dir := filepath.Dir(filePath)
+	tmp, err := os.CreateTemp(dir, ".sops-entry-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+
+	if _, err := tmp.Write(encryptedFile); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("writing temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+
+	if err := os.Chmod(tmpName, fileMode); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("setting file permissions: %w", err)
+	}
+
+	if err := os.Rename(tmpName, filePath); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("renaming temp file: %w", err)
 	}
 
 	return nil
@@ -128,14 +193,36 @@ func readEntries(tree *sopssdk.Tree, keys []string) map[string]string {
 	return result
 }
 
+// convertTreeValue converts SOPS tree types to standard Go types that flatten() understands.
+// TreeBranch (used by SOPS for nested maps) is converted to map[string]interface{}.
+func convertTreeValue(v interface{}) interface{} {
+	switch typed := v.(type) {
+	case sopssdk.TreeBranch:
+		m := make(map[string]interface{}, len(typed))
+		for _, item := range typed {
+			m[fmt.Sprint(item.Key)] = convertTreeValue(item.Value)
+		}
+		return m
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for i, item := range typed {
+			result[i] = convertTreeValue(item)
+		}
+		return result
+	default:
+		return v
+	}
+}
+
 // readAllEntries extracts all key/value pairs from the decrypted tree's first branch,
 // flattening nested structures to dot-separated keys.
 func readAllEntries(tree *sopssdk.Tree) map[string]string {
+	if len(tree.Branches) == 0 {
+		return map[string]string{}
+	}
 	data := make(map[string]interface{})
 	for _, item := range tree.Branches[0] {
-		if keyStr, ok := item.Key.(string); ok {
-			data[keyStr] = item.Value
-		}
+		data[fmt.Sprint(item.Key)] = convertTreeValue(item.Value)
 	}
 	return flatten(data)
 }

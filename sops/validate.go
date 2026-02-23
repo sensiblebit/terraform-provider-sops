@@ -4,10 +4,10 @@ import "fmt"
 
 var validTypes = map[string]bool{
 	"json":   true,
-	"yaml": true,
+	"yaml":   true,
 	"dotenv": true,
-	"ini": true,
-	"raw": true,
+	"ini":    true,
+	"raw":    true,
 }
 
 // validateInputType ensures that we can decode the input
