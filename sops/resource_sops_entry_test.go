@@ -125,6 +125,32 @@ resource "sops_entry" "test" {
 	})
 }
 
+func TestResourceSopsEntry_planWithUnknownEntryValue(t *testing.T) {
+	tmpFile := copyFixture(t, "basic.yaml")
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource "terraform_data" "upstream" {
+  input = "bootstrap"
+}
+
+resource "sops_entry" "test" {
+  file = %q
+  entries = {
+    dynamic_key = terraform_data.upstream.id
+  }
+}
+`, tmpFile),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}
+
 func TestResourceSopsEntry_overwriteExisting(t *testing.T) {
 	tmpFile := copyFixture(t, "basic.yaml")
 

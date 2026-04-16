@@ -84,12 +84,7 @@ func (r *entryResource) ValidateConfig(ctx context.Context, req resource.Validat
 		return
 	}
 
-	var entries map[string]string
-	diags = config.Entries.ElementsAs(ctx, &entries, false)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	entries := config.Entries.Elements()
 
 	if len(entries) == 0 {
 		resp.Diagnostics.AddAttributeError(
