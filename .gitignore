@@ -1,4 +1,5 @@
 bin/
 binaries/
 releases/
+dist/
 terraform-provider-sops

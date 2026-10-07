@@ -1,12 +1,16 @@
 # terraform-sops
 
+This repository is Sensiblebit's fork of [carlpett/terraform-provider-sops](https://github.com/carlpett/terraform-provider-sops).
+The `feat/sops-entry-resource` branch adds the `sops_entry` resource and prepares release publishing.
+The Sensiblebit provider is not yet published to the Terraform Registry. The examples below use its planned source address.
+
 A Terraform plugin for using files encrypted with [SOPS](https://github.com/getsops/sops).
 
 **NOTE:** To prevent plaintext secrets from being written to disk, you *must* set up a secure remote state backend. See the [official docs](https://developer.hashicorp.com/terraform/language/state/sensitive-data) on _Sensitive Data in State_ for more information or use [ephemeral block](#example-using-ephemeral-block).
 
 ## Example
 
-**NOTE:** All examples assume Terraform 0.13 or newer. For information about usage on older versions, see the [legacy usage docs](docs/legacy_usage.md).
+**NOTE:** All examples assume Terraform 0.13 or newer. For information about usage on older versions, see the [legacy usage docs](docs/guides/legacy_usage.md).
 
 Encrypt a file using Sops: `sops demo-secret.enc.json`
 
@@ -22,8 +26,7 @@ Encrypt a file using Sops: `sops demo-secret.enc.json`
 terraform {
   required_providers {
     sops = {
-      source = "carlpett/sops"
-      version = "~> 0.5"
+      source = "sensiblebit/sops"
     }
   }
 }
@@ -70,8 +73,7 @@ For use with reading files that might not be local.
 terraform {
   required_providers {
     sops = {
-      source = "carlpett/sops"
-      version = "~> 0.5"
+      source = "sensiblebit/sops"
     }
   }
 }
@@ -104,8 +106,7 @@ For Terraform 0.13 and later, specify the source and version in a `required_prov
 terraform {
   required_providers {
     sops = {
-      source = "carlpett/sops"
-      version = "~> 0.5"
+      source = "sensiblebit/sops"
     }
   }
 }
@@ -122,16 +123,24 @@ The PGP key used for encrypting the test cases is found in `test/testing-key.pgp
 
 To create the Terraform-registry-documentation, simply run `make generate-documentation`
 
+## Release publishing
+
+The release workflow uses the Sensiblebit organization secrets `GPG_PRIVATE_KEY` and `GPG_PRIVATE_KEY_PASSPHRASE`.
+GoReleaser builds provider archives, adds the protocol 6 registry manifest, and signs the SHA-256 checksum file.
+A `v*` tag starts the workflow and creates a draft GitHub release. Publish the draft after you check its files.
+The first release must also be registered as `sensiblebit/sops` in the Terraform Registry.
+
+Use `make snapshot` to check release packaging without publishing or signing a release.
+
 ## Transitioning to Terraform 0.13 provider required blocks.
 
-With Terraform 0.13, providers are available/downloaded via the [terraform registry](https://registry.terraform.io/providers/carlpett/sops/latest) via a required_providers block.
+After the first registry release, Terraform 0.13 and later can install this provider with a `required_providers` block.
 
 ```hcl
 terraform {
   required_providers {
     sops = {
-      source = "carlpett/sops"
-      version = "~> 0.5"
+      source = "sensiblebit/sops"
     }
   }
 }
@@ -140,7 +149,7 @@ terraform {
 A prerequisite when converting is that you must remove the data source block from the previous SOPS provider in your `terraform.state` file. 
 This can be done via:
 ```shell
-terraform state replace-provider registry.terraform.io/-/sops registry.terraform.io/carlpett/sops
+terraform state replace-provider registry.terraform.io/-/sops registry.terraform.io/sensiblebit/sops
 ```
 
 If not you will be greeted with: 
@@ -162,8 +171,7 @@ Ephemeral resources can be referenced in `write-only` arguments.
 terraform {
   required_providers {
     sops = {
-      source = "carlpett/sops"
-      version = "~> 1.3.0"
+      source = "sensiblebit/sops"
     }
   }
 }
@@ -182,5 +190,4 @@ resource "aws_ssm_parameter" "sops_secrets" {
 See documentation:
 * [Ephemeral block](https://developer.hashicorp.com/terraform/language/block/ephemeral)
 * [Write-Only arguments](https://developer.hashicorp.com/terraform/language/manage-sensitive-data/write-only)
-
 

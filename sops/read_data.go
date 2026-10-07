@@ -8,8 +8,8 @@ import (
 	"github.com/getsops/sops/v3/decrypt"
 	"gopkg.in/yaml.v3"
 
-	"github.com/carlpett/terraform-provider-sops/sops/internal/dotenv"
-	"github.com/carlpett/terraform-provider-sops/sops/internal/ini"
+	"github.com/sensiblebit/terraform-provider-sops/sops/internal/dotenv"
+	"github.com/sensiblebit/terraform-provider-sops/sops/internal/ini"
 )
 
 func readData(content []byte, format string) (map[string]string, string, error) {

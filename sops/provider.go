@@ -12,14 +12,20 @@ import (
 
 var _ provider.Provider = &SopsProvider{}
 
-type SopsProvider struct{}
+type SopsProvider struct {
+	version string
+}
 
-func New() provider.Provider {
-	return &SopsProvider{}
+// New returns a provider factory for the specified version.
+func New(version string) func() provider.Provider {
+	return func() provider.Provider {
+		return &SopsProvider{version: version}
+	}
 }
 
 func (p *SopsProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "sops"
+	resp.Version = p.version
 }
 
 func (p *SopsProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {

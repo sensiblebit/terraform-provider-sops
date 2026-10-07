@@ -10,10 +10,10 @@ import (
 )
 
 var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
-	"sops": providerserver.NewProtocol6WithError(New()),
+	"sops": providerserver.NewProtocol6WithError(New("test")()),
 	"echo": echoprovider.NewProviderServer(),
 }
 
 func TestProvider_impl(t *testing.T) {
-	var _ provider.Provider = New()
+	var _ provider.Provider = New("test")()
 }

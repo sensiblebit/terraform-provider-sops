@@ -1,4 +1,4 @@
-module github.com/carlpett/terraform-provider-sops
+module github.com/sensiblebit/terraform-provider-sops
 
 go 1.25.8
 

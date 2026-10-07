@@ -7,8 +7,10 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
-	"github.com/carlpett/terraform-provider-sops/sops"
+	"github.com/sensiblebit/terraform-provider-sops/sops"
 )
+
+var version = "dev"
 
 func main() {
 	var debug bool
@@ -17,11 +19,11 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/carlpett/sops",
+		Address: "registry.terraform.io/sensiblebit/sops",
 		Debug:   debug,
 	}
 
-	err := providerserver.Serve(context.Background(), sops.New, opts)
+	err := providerserver.Serve(context.Background(), sops.New(version), opts)
 	if err != nil {
 		log.Fatal(err.Error())
 	}

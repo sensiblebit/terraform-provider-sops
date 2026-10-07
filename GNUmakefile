@@ -1,11 +1,4 @@
 export CGO_ENABLED = 0
-VERSION = $(shell git describe --tags --match='v*' --always)
-RELEASE = $(patsubst v%,%,$(VERSION))# Remove leading v to comply with Terraform Registry conventions
-
-CROSSBUILD_OS   = linux windows darwin
-CROSSBUILD_ARCH = 386 amd64 arm64
-SKIP_OSARCH     = darwin_386 windows_arm64
-OSARCH_COMBOS   = $(filter-out $(SKIP_OSARCH),$(foreach os,$(CROSSBUILD_OS),$(addprefix $(os)_,$(CROSSBUILD_ARCH))))
 
 default: build
 
@@ -28,24 +21,13 @@ build:
 generate-documentation:
 	cd tools; go generate ./...
 
-crossbuild: $(GOPATH)/bin/gox
-	@echo ">> cross-building"
-	gox -arch="$(CROSSBUILD_ARCH)" -os="$(CROSSBUILD_OS)" -osarch="$(addprefix !,$(subst _,/,$(SKIP_OSARCH)))" \
-		-output="binaries/$(VERSION)/{{.OS}}_{{.Arch}}/terraform-provider-sops_$(VERSION)"
+crossbuild:
+	goreleaser build --snapshot --clean
 
-$(GOPATH)/bin/gox:
-	@go install github.com/mitchellh/gox@latest
+snapshot:
+	goreleaser release --snapshot --clean --skip=sign
 
-# This uses the `gh` tool, which is preinstalled on GitHub Actions runners.
-release: crossbuild
-	@echo ">> uploading release $(VERSION)"
-	mkdir -p releases
-	set -e; for OSARCH in $(OSARCH_COMBOS); do \
-		zip -j releases/terraform-provider-sops_$(RELEASE)_$$OSARCH.zip binaries/$(VERSION)/$$OSARCH/terraform-provider-sops_* > /dev/null; \
-		gh release upload $(VERSION) "releases/terraform-provider-sops_$(RELEASE)_$$OSARCH.zip#terraform-provider-sops_$(RELEASE)_$$OSARCH.zip"; \
-	done
-	@echo ">>> generating sha256sums:"
-	cd releases; sha256sum *.zip | tee terraform-provider-sops_$(RELEASE)_SHA256SUMS
-	gh release upload $(VERSION) "releases/terraform-provider-sops_$(RELEASE)_SHA256SUMS#terraform-provider-sops_$(RELEASE)_SHA256SUMS"
+release:
+	goreleaser release --clean
 
-.PHONY: all style vet test build crossbuild release generate-documentation
+.PHONY: default style vet test build crossbuild snapshot release generate-documentation
