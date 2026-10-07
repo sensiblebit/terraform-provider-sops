@@ -20,10 +20,15 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: '1.16.5'
+          terraform_wrapper: false
       - name: Import test GPG key
         run: gpg --import test/testing-key.pgp
       - name: Test
-        run: make test
+        run: TF_ACC_TERRAFORM_PATH="$(command -v terraform)" make test
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v6
         id: import_gpg

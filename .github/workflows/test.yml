@@ -31,11 +31,17 @@ jobs:
       - name: Build
         run: go build -v .
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: '1.16.5'
+          terraform_wrapper: false
+
       - name: Import test GPG key
         run: gpg --import test/testing-key.pgp
 
       - name: Test
-        run: make test
+        run: TF_ACC_TERRAFORM_PATH="$(command -v terraform)" make test
 
       - name: Validate release configuration
         uses: goreleaser/goreleaser-action@v6
