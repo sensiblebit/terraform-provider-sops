@@ -1,7 +1,8 @@
 provider "sops" {}
 
 resource "sops_entry" "secrets" {
-  file = "config.enc.yaml"
+  file        = "config.enc.yaml"
+  config_file = "${path.module}/.sops.yaml"
 
   entries = {
     db_password    = var.db_password

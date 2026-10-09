@@ -14,6 +14,7 @@ import (
 	"github.com/getsops/sops/v3/cmd/sops/formats"
 	"github.com/getsops/sops/v3/config"
 	"github.com/getsops/sops/v3/keyservice"
+	"github.com/getsops/sops/v3/version"
 )
 
 // isFileNotFound returns true if the error indicates the file does not exist.
@@ -61,6 +62,61 @@ func loadAndDecryptFile(filePath string) (*sopssdk.Tree, []byte, sopssdk.Cipher,
 	}
 
 	return tree, dataKey, cipher, store, nil
+}
+
+// loadOrCreateFile uses creation rules only when the target file does not exist.
+func loadOrCreateFile(filePath, configPath string) (*sopssdk.Tree, []byte, sopssdk.Cipher, common.Store, error) {
+	tree, dataKey, cipher, store, err := loadAndDecryptFile(filePath)
+	if err == nil || !isFileNotFound(err) {
+		return tree, dataKey, cipher, store, err
+	}
+	if configPath == "" {
+		return nil, nil, nil, nil, fmt.Errorf("%w; set config_file to create an encrypted file", err)
+	}
+	absolutePath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	creation, err := config.LoadCreationRuleForFile(configPath, absolutePath, nil)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("loading creation rules: %w", err)
+	}
+	if creation == nil || len(creation.KeyGroups) == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("creation rule has no encryption recipients")
+	}
+	for _, group := range creation.KeyGroups {
+		if len(group) == 0 {
+			return nil, nil, nil, nil, fmt.Errorf("creation rule has an empty key group")
+		}
+	}
+	metadata := sopssdk.Metadata{
+		KeyGroups:               creation.KeyGroups,
+		ShamirThreshold:         creation.ShamirThreshold,
+		UnencryptedSuffix:       creation.UnencryptedSuffix,
+		EncryptedSuffix:         creation.EncryptedSuffix,
+		UnencryptedRegex:        creation.UnencryptedRegex,
+		EncryptedRegex:          creation.EncryptedRegex,
+		UnencryptedCommentRegex: creation.UnencryptedCommentRegex,
+		EncryptedCommentRegex:   creation.EncryptedCommentRegex,
+		MACOnlyEncrypted:        creation.MACOnlyEncrypted,
+		Version:                 version.Version,
+	}
+	if metadata.UnencryptedSuffix == "" && metadata.EncryptedSuffix == "" &&
+		metadata.UnencryptedRegex == "" && metadata.EncryptedRegex == "" &&
+		metadata.UnencryptedCommentRegex == "" && metadata.EncryptedCommentRegex == "" {
+		metadata.UnencryptedSuffix = sopssdk.DefaultUnencryptedSuffix
+	}
+	tree = &sopssdk.Tree{
+		Branches: sopssdk.TreeBranches{{}},
+		Metadata: metadata,
+		FilePath: absolutePath,
+	}
+	dataKey, failures := tree.GenerateDataKey()
+	if len(failures) > 0 {
+		return nil, nil, nil, nil, fmt.Errorf("generating data key: %v", failures)
+	}
+	store = common.StoreForFormat(formats.FormatForPath(filePath), config.NewStoresConfig())
+	return tree, dataKey, aes.NewCipher(), store, nil
 }
 
 // validateKeyPath checks that a key path is well-formed for use with parsePath.
@@ -151,6 +207,9 @@ func encryptAndWriteFile(tree *sopssdk.Tree, dataKey []byte, cipher sopssdk.Ciph
 
 	// Atomic write: write to temp file in same directory, then rename
 	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("creating file directory: %w", err)
+	}
 	tmp, err := os.CreateTemp(dir, ".sops-entry-*.tmp")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
