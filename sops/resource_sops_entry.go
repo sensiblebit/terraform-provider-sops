@@ -25,10 +25,11 @@ func newEntryResource() resource.Resource {
 type entryResource struct{}
 
 type entryResourceModel struct {
-	Id      types.String `tfsdk:"id"`
-	File    types.String `tfsdk:"file"`
-	Entries types.Map    `tfsdk:"entries"`
-	Data    types.Map    `tfsdk:"data"`
+	Id         types.String `tfsdk:"id"`
+	File       types.String `tfsdk:"file"`
+	ConfigFile types.String `tfsdk:"config_file"`
+	Entries    types.Map    `tfsdk:"entries"`
+	Data       types.Map    `tfsdk:"data"`
 }
 
 func (r *entryResource) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -37,7 +38,7 @@ func (r *entryResource) Metadata(_ context.Context, _ resource.MetadataRequest, 
 
 func (r *entryResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manage specific key/value entries in an existing SOPS-encrypted file. " +
+		Description: "Manage specific key/value entries in a SOPS-encrypted file. " +
 			"Inserts entries if missing, updates if changed. Unchanged values preserve their ciphertext. " +
 			"Only one sops_entry resource should target a given file to avoid concurrent write conflicts. " +
 			"Only the first YAML document is supported in multi-document files.",
@@ -47,11 +48,17 @@ func (r *entryResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Computed:    true,
 			},
 			"file": schema.StringAttribute{
-				Description: "Path to an existing SOPS-encrypted file.",
+				Description: "Path to a SOPS-encrypted file. A missing file is created only when config_file is set.",
 				Required:    true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+			},
+			"config_file": schema.StringAttribute{
+				Description: "Explicit path to a SOPS configuration file for creating a missing file. " +
+					"Rules match the target path relative to this configuration file. " +
+					"The provider does not search parent directories. Existing files keep their encryption metadata.",
+				Optional: true,
 			},
 			"entries": schema.MapAttribute{
 				Description: "Key/value pairs to set in the encrypted file. " +
@@ -127,7 +134,7 @@ func (r *entryResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	tree, dataKey, cipher, store, err := loadAndDecryptFile(filePath)
+	tree, dataKey, cipher, store, err := loadOrCreateFile(filePath, plan.ConfigFile.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to load encrypted file", err.Error())
 		return
