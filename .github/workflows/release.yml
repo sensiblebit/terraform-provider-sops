@@ -1,13 +1,10 @@
 name: Release
-
 on:
   push:
     tags:
-      - 'v*'
-
+      - v*
 permissions:
   contents: write
-
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
@@ -18,12 +15,13 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
-          go-version-file: 'go.mod'
+          go-version: stable
+          check-latest: true
           cache: true
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: '1.16.5'
+          terraform_version: 1.16.5
           terraform_wrapper: false
       - name: Import test GPG key
         run: gpg --import test/testing-key.pgp
